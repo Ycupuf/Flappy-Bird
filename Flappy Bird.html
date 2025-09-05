@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="tr">
+<meta charset="utf-8"/>
+<title>Flappy - Tek Dosya (Fix)</title>
+
+<style>
+:root { color-scheme: light dark; }
+html,body{height:100%;margin:0;display:grid;place-items:center;background:#1f2937;font-family:system-ui,Segoe UI,Arial}
+canvas{background:#87ceeb;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.hint{position:fixed;bottom:10px;color:#d1d5db;font:14px/1.2 system-ui,Segoe UI,Arial;text-align:center}
+</style>
+
+<canvas id="game" width="420" height="680"></canvas>
+<div class="hint">Boşluk/dokun: zıpla • R: Yeniden Başlat</div>
+
+<script>
+// ============ Ayarlar ============
+const cvs = document.getElementById('game');
+const ctx = cvs.getContext('2d'); // << getContext (C büyük)
+
+let state = 'play';
+let score = 0;                     // << let score
+let best = Number(localStorage.getItem("bestScore") || 0);
+
+// Kuş
+const bird = {
+  x: 120,
+  y: cvs.height/2,
+  r: 12,
+  vy: 0,
+  gravity: 0.2,
+  flap: -4,
+};
+
+// Borular
+const pipes = [];
+const PIPE_W = 64;
+const PIPE_GAP = 150;
+let PIPE_SPD = 2.6;
+let spawnEvery = 1300;
+let spawnTimer = 0;
+
+// Girişler
+addEventListener('keydown', e =>{
+  if (e.code === 'Space') jump();
+  if (e.key.toLowerCase() === 'r') reset();
+});
+addEventListener('touchstart', () => jump(), {passive:true});
+
+function jump() {
+  if (state === "over") { reset(); return; }
+  bird.vy = bird.flap;
+}
+
+// Rastgele
+function rand(min,max) { return Math.random()*(max-min)+min; }
+
+// Yeni boru oluştur
+function spawnPipe(){
+  const groundY = cvs.height - 48;
+  const minTop = 60, minBottom = 60;
+  const topH = rand(minTop, groundY - minBottom - PIPE_GAP);
+  pipes.push({
+    x: cvs.width + 10,
+    top: { y: 0,              h: topH },
+    bot: { y: topH+PIPE_GAP,  h: groundY - (topH+PIPE_GAP) },
+    passed: false
+  });
+}
+
+// Daire–dikdörtgen çarpışma
+function circleRectCollide(cx,cy,cr, rx,ry,rw,rh){
+  const nx = Math.max(rx, Math.min(cx, rx+rw));
+  const ny = Math.max(ry, Math.min(cy, ry+rh));
+  const dx = cx - nx, dy = cy - ny;
+  return dx*dx + dy*dy <= cr*cr;
+}
+
+// (Ops.) Sprite kuş – yoksa daire çizecek
+const birdImg = new Image();
+let useSprite = false;
+let FRAMES = 3, frame = 0, frameTimer = 0, FRAME_DUR = 100;
+let FW = 0, FH = 0;
+birdImg.onload = () => { useSprite = true; FW = birdImg.width/FRAMES; FH = birdImg.height; };
+birdImg.src = 'bird.png'; // varsa kullanılır
+
+// ============ Oyun döngüsü ============
+let last = performance.now();
+requestAnimationFrame(t => { last = t; loop(t); });
+
+function loop(now){
+  const dt = now - last; last = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function update(dt){
+  if (state !== "play") return;
+
+  // Kuş fiziği
+  bird.vy += bird.gravity;   // << birdv değil bird.vy
+  bird.y  += bird.vy;
+
+  // Zemin/Tavan
+  const groundY = cvs.height - 48;
+  if (bird.y + bird.r >= groundY || bird.y - bird.r <= 0){
+    return gameOver();
+  }
+
+  // Boru spawn
+  spawnTimer += dt;
+  if (spawnTimer >= spawnEvery){
+    spawnTimer = 0;
+    spawnPipe();
+  }
+
+  // Boruları hareket/puan/çarpışma/temizlik
+  for (let i = pipes.length-1; i >= 0; i--){
+    const p = pipes[i];
+    p.x -= PIPE_SPD;
+
+    // Skor (kuş geçtiyse)
+    if (!p.passed && p.x + PIPE_W < bird.x){
+      p.passed = true;
+      score++;
+      if (score > best){ best = score; localStorage.setItem("bestScore", best); }
+
+      // Zorluk artışı
+      if (score % 5 === 0){
+        PIPE_SPD   = Math.min(5.2, PIPE_SPD + 0.25);
+        spawnEvery = Math.max(900, spawnEvery - 40);
+      }
+    }
+
+    // Çarpışma
+    if (
+      circleRectCollide(bird.x,bird.y,bird.r, p.x, p.top.y, PIPE_W, p.top.h) ||
+      circleRectCollide(bird.x,bird.y,bird.r, p.x, p.bot.y, PIPE_W, p.bot.h) // << p.bot.y / p.bot.h
+    ){
+      return gameOver();
+    }
+
+    // Ekrandan çıktıysa sil
+    if (p.x + PIPE_W < -30) pipes.splice(i,1);  // << < -30
+  }
+}
+
+function draw(){
+  // Arka plan
+  ctx.clearRect(0,0,cvs.width,cvs.height);
+
+  // Basit bulutlar
+  ctx.globalAlpha = 0.15;
+  ctx.fillStyle = "#fff"; // << "#fff"
+  for(let i=0;i<7;i++){
+    const x = (i*70 + (performance.now()/15)%70) % (cvs.width+70) - 70;
+    const y = 30 + (i%3)*22;
+    ctx.beginPath(); ctx.arc(x, y,18,0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Borular
+  ctx.fillStyle = "#2ecc71";
+  pipes.forEach(p=>{
+    ctx.fillRect(p.x, p.top.y, PIPE_W, p.top.h);
+    ctx.fillRect(p.x, p.bot.y, PIPE_W, p.bot.h);
+  });
+
+  // Zemin
+  ctx.fillStyle = "#e9df9b";
+  ctx.fillRect(0, cvs.height-48, cvs.width,48);
+
+  // Kuş
+  drawBird();
+
+  // Skor
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 30px system-ui,Segoe UI,Arial";
+  ctx.fillText(String(score),16,42);
+  ctx.font = "bold 14px system-ui,Segoe UI,Arial";
+  ctx.fillText("Best: " + best, cvs.width - 110, 28);
+
+  // Oyun bitti
+  if (state === "over"){
+    ctx.fillStyle = "rgba(0,0,0,.55)";
+    ctx.fillRect(0,0,cvs.width,cvs.height);
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.font = "bold 38px system-ui,Segoe UI,Arial";
+    ctx.fillText("OYUN BİTTİ", cvs.width/2, cvs.height/2 - 24);
+    ctx.font = "18px system-ui,Segoe UI,Arial";
+    ctx.fillText("R: yeniden başlat • Boşluk/Dokun: zıpla", cvs.width/2, cvs.height/2 + 16);
+    ctx.textAlign = "left";
+  }
+}
+
+function drawBird(){
+  if (useSprite && FW && FH){
+    frameTimer += 16.6;
+    if (frameTimer >= FRAME_DUR){ frameTimer = 0; frame = (frame+1) % FRAMES; }
+    const sx = frame * FW, sy = 0;
+    const angle = Math.max(Math.min(bird.vy * 0.06, 0.7), -0.4);
+    ctx.save();
+    ctx.translate(bird.x, bird.y);
+    ctx.rotate(angle);
+    ctx.drawImage(birdImg, sx, sy, FW, FH, -FW/2, -FH/2, FW, FH);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = "#ffdd55";
+    ctx.beginPath(); ctx.arc(bird.x, bird.y, bird.r, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = "#333";
+    ctx.beginPath(); ctx.arc(bird.x+4, bird.y-4, 2.6, 0, Math.PI*2); ctx.fill();
+  }
+}
+
+function gameOver(){ state = "over"; }
+
+function reset(){
+  state = "play";
+  score = 0;
+  pipes.length = 0;
+  bird.y = cvs.height/2;
+  bird.vy = 0;
+  PIPE_SPD   = 2.6;
+  spawnEvery = 1300;
+  spawnTimer = 0;
+}
+</script>
+</html>
