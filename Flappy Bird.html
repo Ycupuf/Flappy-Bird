@@ -16,7 +16,7 @@
     }
     #oyunEkrani {
         position: relative;
-        background: linear-gradient();
+        background: linear-gradient(to bottom, #87CEEB,#ffffff);
         border: 3px solid #654321;
     }
     #puan {
@@ -30,7 +30,7 @@
         position: absolute;
         bottom: 50%;
         left: 50%;
-        transform: translate(-50%);
+        transform: translate(-50%, -50%);
         text-align: center;
         color: white;
         }
@@ -39,7 +39,7 @@
         position: absolute;
         bottom: 0%;
         left: 0%;
-        transform: translate(50%);
+        transform: translate(50%,0%);
 
     }
 
@@ -84,9 +84,16 @@
     }
 
     //borular
-    let borular = [];
-    const borugenislik = 60;
-    const boruaraliği = 180;
+    const borugenislik= 60
+    const boruaraliği =  180
+    const GAP = 160
+
+    let borular = [{
+        x:300,
+        bosluky: 90,
+        gecildi: false
+    }];
+     
     let boruzamanlayici = 0;
 
     const kusresmi = new Image();
@@ -120,8 +127,166 @@ function kusunuharekettir(){
         oyunubitir();
     }
 }
+function kusuziplat(){
+    if(!oyunDevam) return;
+    kus.kushiz = kus.ziplamagucu;
+}
 
 
+function borulariciz(){
+    borular.forEach(boru => {
+     if(boruresmi.complete) {
+        ctx.save();
+        ctx.translate(boru.x + borugenislik/2, boru.bosluky/2);
+        ctx.scale(1,-1);
+        ctx.drawImage(boruresmi,-borugenislik/2, -boru.bosluky/2, borugenislik, boru.bosluky);
+        ctx.restore();   
+     }else {
+        ctx.fillStyle = '#228B22';
+        ctx.fillRect(boru.x,0, borugenislik,boru.bosluky);
+     }
+     // ALT BORU
+if (boruresmi.complete) {
+  const altY = boru.bosluky + GAP;
+  const altH = canvas.height - altY;
+  ctx.drawImage(boruresmi, boru.x, altY, borugenislik, altH);
+} else {
+  const altY = boru.bosluky + GAP;
+  const altH = canvas.height - altY;
+  ctx.fillStyle = '#228B22';
+  ctx.fillRect(boru.x, altY, borugenislik, altH);
+}})}
+
+
+
+function borularihareketettir(){
+    if (!oyunDevam) return;
+
+    borular.forEach((boru, index) => {
+        boru.x -=2;
+
+        //puan kontrol
+        if(!boru.gecildi.x > boru.x + borugenislik){
+            puan++;
+            document.getElementById('puanSayisi').textContent = puan;
+            boru.gecildi = true;
+        }
+        if (boru.x + borugenislik < 0){
+            borular.splice(index,1);
+        }
+        });
+        //yeni boru zamanlayıcı
+        boruzamanlayici++;
+        if(boruzamanlayici > 240){
+            boruyarat();
+            boruzamanlayici = 0;
+        }
+    }
+
+function boruyarat(){
+    const boslukyuksekligi = GAP; // kuşun geçeceği boşluk sabit
+    const minbosluky = 50; //boşluk minimum 50px yukarıdan
+    const maxbosluky = canvas.height - boslukyuksekligi - 50;
+
+    //rastgele boşluk konumu
+    const rastgeleBoslukY = Math.random() * (maxbosluky - minbosluky) + minbosluky;
+
+    //yeni boru objesi oluştur
+    const yeniBoru = {
+        x: canvas.width, //ekran sağından başla
+        bosluky: rastgeleBoslukY, // rastgele bosluk
+        gecildi: false
+    };
+    //diziye ekle
+    borular.push (yeniBoru);
+}
+function carpismakontrol() {
+    if(!oyunDevam) return;
+    
+    borular.forEach(boru => {
+        //yatay çakışma var mı
+        if (kus.x < boru.x + borugenislik && kus.x + kus.kusgenislik > boru.x) {
+
+            //üst boru çarpışma
+            if(kus.y < boru.bosluky){
+                oyunubitir(); //üst boru çarpışma
+            }
+            //alt boru çarpışma
+            const altBoruY = boru.bosluky + GAP;
+            if(kus.y + kus.kuşyukseklik > altBoruY) {
+                oyunubitir(); //alt boru çarpışma
+            }
+        }
+    })
+}
+function oyunuguncelle () {
+    kusunuharekettir();
+    borularihareketettir();
+    carpismakontrol();
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#87CEEB';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+
+    borulariciz();
+    kusunuciz();
+
+    if(oyunDevam){
+        requestAnimationFrame(oyunuguncelle);
+    }
+}
+function oyunuBaslat(){
+    oyunBasladi = true;
+    oyunDevam = true;
+    puan = 0;
+    document.getElementById('puanSayisi').textContent = puan;
+    document.getElementById('mesaj').style.display = 'none';
+
+    //kuşu baslangıc pozisyonuna getir
+    kus.y = 250;
+    kus.kushiz = 0;
+
+    //boruları temizle 
+    borular = [{
+        x:300,
+        bosluky:90,
+        gecildi: false
+    }];//1 başlangıc borusu
+
+    boruzamanlayici = 0;
+    oyunuguncelle();//ana oyun döngüsü
+}
+
+function oyunubitir(){
+    oyunDevam = false;
+     
+    //gameover mesajı
+    document.getElementById('mesaj').innerHTML = `
+        <h2>Oyun Bitti!</h2>
+        <p>Puanınız: ${puan}</p>
+        <button onclick="oyunuBaslat()">Tekrar Oyna</button>
+    `;
+    document.getElementById('mesaj').style.display = 'block'; // mesajı görünür hale getir
+}
+
+document.addEventListener('keydown', (e)  => {
+    if(e.code === 'Space') {
+        e.preventDefault();
+
+        if(!oyunBasladi){
+            oyunuBaslat();
+        }else{
+            kusuziplat();
+        }
+    }
+})
+
+ctx.clearRect(0,0,canvas.width,canvas.height);
+ctx.fillStyle = '#87CEEB';
+ctx.fillRect (0,0,canvas.width,canvas.height);
+borulariciz();
+kusunuciz();
 
 
 
